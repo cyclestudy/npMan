@@ -1,4 +1,5 @@
-** NP manager **
+*NP manager*
+
 在原版的脚本基础上修改。
 增加了v6显示等；
 重命名成：npMan (npMananger)
@@ -23,11 +24,12 @@ curl -sL https://raw.githubusercontent.com/2tof/npMan/main/npman.sh | sudo bash 
  4. Uninstall (np -u) 
  0. Exit
 
-NP项目：
+原nodepass项目链接：
 Nodepass Project
+
 https://github.com/NodePassProject
 
 https://nodepass.eu/
 
-NP sh脚本安装
+NPsh脚本
 https://github.com/NodePassProject/npsh
