@@ -12,17 +12,16 @@ wget
 wget -qO npman.sh https://raw.githubusercontent.com/2tof/npMan/main/npman.sh && sudo bash npman.sh
 ```
 直接安装 （参数-i）
-···
+```
 curl -sL https://raw.githubusercontent.com/2tof/npMan/main/npman.sh | sudo bash -s -- -i
-···
+```
+
 其他参数
-···
  1. Stop API (np -o) 
  2. Change KEY (np -k) 
  3. Upgrade core (np -v) 
  4. Uninstall (np -u) 
  0. Exit
-···
 
 NP项目：
 Nodepass Project
