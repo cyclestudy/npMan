@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-SCRIPT_VERSION='0.0.9-Online-Auto-Final'
+SCRIPT_VERSION='1.0.0-v2'
 export DEBIAN_FRONTEND=noninteractive
 
 TEMP_DIR='/tmp/nodepass'
@@ -32,7 +32,7 @@ E[18]="NodePass is already installed, please uninstall it before reinstalling"
 E[19]="NodePass downloaded and extracted successfully."
 E[20]="Failed to get latest version"
 E[21]="Running in container environment, skipping service creation and starting process directly"
-E[22]="NodePass Script Usage:\n np - Show menu\n np -i - Install NodePass\n np -u - Uninstall NodePass\n np -o - Toggle service status (start/stop)\n np -k - Change NodePass API key\n np -v - Upgrade NodePass Core\n np -s - Show NodePass API info\n np -h - Show help information"
+E[22]="NodePass Script Usage:\n np - Show menu\n np -i - Install/Reconfigure\n np -u - Uninstall\n np -o - Toggle service status\n np -k - Change API key\n np -v - Upgrade Core\n np -s - Show API info\n np -h - Show help information"
 E[23]="Please enter the path to your TLS certificate file:"
 E[24]="Please enter the path to your TLS private key file:"
 E[25]="Certificate file does not exist:"
@@ -83,7 +83,6 @@ E[78]="The external network of the current machine is dual-stack:\\\n 1. \${SERV
 E[79]="Please select or enter the domain or IP directly:"
 E[85]="Getting machine IP address..."
 
-# --- 输出格式函数 ---
 warning() { echo -e "\033[31m\033[01m$*\033[0m"; }
 error() { echo -e "\033[31m\033[01m$*\033[0m" && exit 1; }
 info() { echo -e "\033[32m\033[01m$*\033[0m"; }
@@ -91,19 +90,12 @@ hint() { echo -e "\033[33m\033[01m$*\033[0m"; }
 reading() { read -rp "$(info "$1")" "$2"; }
 text() { grep -q '\$' <<< "${E[$*]}" && eval echo "\$(eval echo "\${E[$*]}")" || eval echo "\${E[$*]}"; }
 
-help() {
-  hint " ${E[22]} "
-}
-
-check_root() {
-  [ "$(id -u)" != 0 ] && error " $(text 2) "
-}
+help() { hint " ${E[22]} "; }
+check_root() { [ "$(id -u)" != 0 ] && error " $(text 2) "; }
 
 check_system() {
   [ "$(uname -s)" != "Linux" ] && error " $(text 5) "
-
   check_system_info
-
   case "$SYSTEM" in
     alpine) PACKAGE_INSTALL='apk add --no-cache'; PACKAGE_UPDATE='apk update -f'; PACKAGE_UNINSTALL='apk del' ;;
     arch) PACKAGE_INSTALL='pacman -S --noconfirm'; PACKAGE_UPDATE='pacman -Syu --noconfirm'; PACKAGE_UNINSTALL='pacman -R --noconfirm' ;;
@@ -123,27 +115,18 @@ check_install() {
       grep -q '^ExecStart=.*tls=0' /etc/systemd/system/nodepass.service && HTTP_S="http" || HTTP_S="https"
     fi
   fi
-
   if [ "$SERVICE_MANAGE" = "systemctl" ] && ! systemctl is-active nodepass &>/dev/null; then
     return 1
   else
-    if ps -ef | grep -vE "grep|<defunct>" | grep -q "nodepass"; then
-      return 0
-    else
-      return 1
-    fi
+    if ps -ef | grep -vE "grep|<defunct>" | grep -q "nodepass"; then return 0; else return 1; fi
   fi
 }
 
 check_dependencies() {
   DEPS_INSTALL=()
-  for cmd in curl wget tar unzip ps; do
-    [ ! -x "$(type -p $cmd)" ] && DEPS_INSTALL+=("$cmd")
-  done
+  for cmd in curl wget tar unzip ps; do [ ! -x "$(type -p $cmd)" ] && DEPS_INSTALL+=("$cmd"); done
   if [ "${#DEPS_INSTALL[@]}" -gt 0 ]; then
-    info "\n $(text 7) ${DEPS_INSTALL[@]} \n"
-    ${PACKAGE_UPDATE} >/dev/null 2>&1
-    ${PACKAGE_INSTALL} ${DEPS_INSTALL[@]} >/dev/null 2>&1
+    info "\n $(text 7) ${DEPS_INSTALL[@]} \n"; ${PACKAGE_UPDATE} >/dev/null 2>&1; ${PACKAGE_INSTALL} ${DEPS_INSTALL[@]} >/dev/null 2>&1
   fi
 }
 
@@ -166,12 +149,7 @@ validate_ip_address() {
   local IPV6_REGEX='^([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{0,4}$'
   local DOMAIN_REGEX='^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
   [ "$IP" = "localhost" ] && IP="127.0.0.1"
-  if [[ "$IP" =~ $IPV4_REGEX ]] || [[ "$IP" =~ $IPV6_REGEX ]] || [[ "$IP" =~ $DOMAIN_REGEX ]]; then
-    return 0
-  else
-    warning " $(text 74) "
-    return 1
-  fi
+  if [[ "$IP" =~ $IPV4_REGEX ]] || [[ "$IP" =~ $IPV6_REGEX ]] || [[ "$IP" =~ $DOMAIN_REGEX ]]; then return 0; else warning " $(text 74) "; return 1; fi
 }
 
 check_port() {
@@ -190,14 +168,15 @@ get_api_url() {
       PORT="${BASH_REMATCH[1]}"
       PREFIX="${BASH_REMATCH[2]}"
       TLS_MODE="${BASH_REMATCH[4]}"
-      grep -qw '0' <<< "$TLS_MODE" && local HTTP_S="http" || local HTTP_S="https"
+      grep -qw '0' <<< "$TLS_MODE" && HTTP_S="http" || HTTP_S="https"
     fi
-    local URL_SERVER_PORT=$(sed -n 's#.*:\([0-9]\+\)\/.*#\1#p' <<< "$CMD_LINE")
+    URL_SERVER_PORT=$(sed -n 's#.*:\([0-9]\+\)\/.*#\1#p' <<< "$CMD_LINE")
     
-    grep -q ':' <<< "$SERVER_IP" && local URL_SERVER_IP="[$SERVER_IP]" || local URL_SERVER_IP="$SERVER_IP"
+    # 修复作用域 Bug：移除了此处的 local 关键字，让全局可读
+    grep -q ':' <<< "$SERVER_IP" && URL_SERVER_IP="[$SERVER_IP]" || URL_SERVER_IP="$SERVER_IP"
     API_URL="${HTTP_S}://${URL_SERVER_IP}:${URL_SERVER_PORT}/${PREFIX:+${PREFIX%/}/}v1"
     
-    local LOCAL_IPV6=$(ip -6 addr show scope global | grep inet6 | awk '{print $2}' | cut -d/ -f1 | head -n 1)
+    LOCAL_IPV6=$(ip -6 addr show scope global | grep inet6 | awk '{print $2}' | cut -d/ -f1 | head -n 1)
     if [ -n "$LOCAL_IPV6" ]; then
       API_URL_V6="${HTTP_S}://[${LOCAL_IPV6}]:${URL_SERVER_PORT}/${PREFIX:+${PREFIX%/}/}v1"
     else
@@ -205,8 +184,18 @@ get_api_url() {
     fi
 
     if grep -q 'output' <<< "$1"; then
-      info " $(text 39) (v4): $API_URL"
-      [ -n "$API_URL_V6" ] && info " $(text 39) (v6): $API_URL_V6"
+      > "$WORK_DIR/api.txt"
+      if grep -q ':' <<< "$URL_SERVER_IP"; then
+        info " $(text 39) (v6): $API_URL"
+        echo "API URL (v6): $API_URL" >> "$WORK_DIR/api.txt"
+      else
+        info " $(text 39) (v4): $API_URL"
+        echo "API URL (v4): $API_URL" >> "$WORK_DIR/api.txt"
+        if [ -n "$API_URL_V6" ]; then
+          info " $(text 39) (v6): $API_URL_V6"
+          echo "API URL (v6): $API_URL_V6" >> "$WORK_DIR/api.txt"
+        fi
+      fi
     fi
   else
     warning " $(text 59) "
@@ -216,7 +205,11 @@ get_api_url() {
 get_api_key() {
   if [ -s "$WORK_DIR/gob/nodepass.gob" ]; then
     KEY=$(grep -a -o '[0-9a-f]\{32\}' $WORK_DIR/gob/nodepass.gob | head -n 1)
-    grep -q 'output' <<< "$1" && info " $(text 40) $KEY"
+    if grep -q 'output' <<< "$1"; then
+      info " $(text 40) $KEY"
+      echo "API KEY: $KEY" >> "$WORK_DIR/api.txt"
+      info " 💾 [Info successfully saved to: $WORK_DIR/api.txt]"
+    fi
   else
     warning " $(text 59) "
   fi
@@ -232,9 +225,7 @@ get_random_port() {
 }
 
 get_local_version() {
-  if [ -f "$WORK_DIR/nodepass" ]; then
-    STABLE_LOCAL_VERSION=$($WORK_DIR/nodepass -v 2>&1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
-  fi
+  if [ -f "$WORK_DIR/nodepass" ]; then STABLE_LOCAL_VERSION=$($WORK_DIR/nodepass -v 2>&1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -n 1); fi
   [ -z "$STABLE_LOCAL_VERSION" ] && STABLE_LOCAL_VERSION="Unknown"
   VERSION_TYPE_TEXT=$(text 67)
 }
@@ -321,11 +312,9 @@ install() {
   SERVER_IPV6_DEFAULT=$DEFAULT_LOCAL_IP6
 
   if [ -n "$SERVER_IPV4_DEFAULT" ] && [ -n "$SERVER_IPV6_DEFAULT" ]; then
-    IS_DUAL_STACK=1
-    hint "\n (2/5) $(text 78) "
+    IS_DUAL_STACK=1; hint "\n (2/5) $(text 78) "
   else
-    IS_DUAL_STACK=0
-    hint "\n (2/5) $(text 12) "
+    IS_DUAL_STACK=0; hint "\n (2/5) $(text 12) "
   fi
 
   reading "\n $(text 79) " SERVER_INPUT
@@ -336,9 +325,26 @@ install() {
     handle_ip_input "$SERVER_INPUT"
   done
 
+  local OLD_PORT="" OLD_PREFIX="" OLD_TLS=""
+  if [ -f "/etc/systemd/system/nodepass.service" ]; then
+    local OLD_CMD=$(sed -n 's/.*ExecStart=.*\(master.*\)"/\1/p' "/etc/systemd/system/nodepass.service" 2>/dev/null)
+    if [[ "$OLD_CMD" =~ master://.*:([0-9]+)/([^?]+)\?(log=[^&]+&)?tls=([0-2]) ]]; then
+      OLD_PORT="${BASH_REMATCH[1]}"
+      OLD_PREFIX="${BASH_REMATCH[2]}"
+      OLD_TLS="${BASH_REMATCH[4]}"
+    fi
+  fi
+
   while true; do
-    reading "\n (3/5) $(text 13) " PORT
+    if [ -n "$OLD_PORT" ]; then
+      reading "\n (3/5) $(text 13) [Current: $OLD_PORT] " PORT
+      [ -z "$PORT" ] && PORT=$OLD_PORT
+    else
+      reading "\n (3/5) $(text 13) " PORT
+    fi
+
     if [ -z "$PORT" ]; then PORT=$(get_random_port); info " $(text 37) $PORT"; break; else
+      [ "$PORT" == "$OLD_PORT" ] && break
       check_port "$PORT" "check_used"
       local PORT_STATUS=$?
       if [ "$PORT_STATUS" = 2 ]; then warning " $(text 41) "; elif [ "$PORT_STATUS" = 1 ]; then warning " $(text 36) "; else break; fi
@@ -346,27 +352,32 @@ install() {
   done
 
   if [[ "$SERVER_INPUT" =~ ^([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{0,4}$ ]]; then
-    CMD_SERVER_IP="$SERVER_INPUT"
-    SERVER_IP="$SERVER_INPUT"
+    CMD_SERVER_IP="$SERVER_INPUT"; SERVER_IP="$SERVER_INPUT"
   else
-    if [[ "$SERVER_INPUT" == "127.0.0.1" || "$SERVER_INPUT" == "localhost" ]]; then
-      CMD_SERVER_IP="127.0.0.1"
-    else
-      CMD_SERVER_IP="" 
-    fi
+    if [[ "$SERVER_INPUT" == "127.0.0.1" || "$SERVER_INPUT" == "localhost" ]]; then CMD_SERVER_IP="127.0.0.1"; else CMD_SERVER_IP=""; fi
     SERVER_IP="$SERVER_INPUT"
   fi
   URL_SERVER_PORT="$PORT"
 
   while true; do
-    reading "\n (4/5) $(text 14) " PREFIX
+    if [ -n "$OLD_PREFIX" ]; then
+      reading "\n (4/5) $(text 14) [Current: $OLD_PREFIX] " PREFIX
+      [ -z "$PREFIX" ] && PREFIX=$OLD_PREFIX
+    else
+      reading "\n (4/5) $(text 14) " PREFIX
+    fi
     [ -z "$PREFIX" ] && PREFIX="api" && break
     if grep -q '^[a-z0-9/]*$' <<< "$PREFIX"; then PREFIX=$(sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s#^/##;s#/$##' <<< "$PREFIX"); break; else warning " $(text 61) "; fi
   done
 
   hint "\n (5/5) $(text 15) "
   hint " $(text 16) "
-  reading "\n $(text 38) " TLS_MODE
+  if [ -n "$OLD_TLS" ]; then
+    reading "\n $(text 38) [Current: $OLD_TLS] " TLS_MODE
+    [ -z "$TLS_MODE" ] && TLS_MODE=$OLD_TLS
+  else
+    reading "\n $(text 38) " TLS_MODE
+  fi
   if [ -z "$TLS_MODE" ]; then TLS_MODE=1; info "Using default: Self-signed certificate"; elif [[ ! "$TLS_MODE" =~ ^[0-2]$ ]]; then warning " $(text 17) "; exit 1; fi
 
   CMD="master://${CMD_SERVER_IP}:${PORT}/${PREFIX}?tls=${TLS_MODE}${CRT_PATH:-}"
@@ -467,13 +478,15 @@ menu_setting() {
 
     OPTION[2]="2. $(text 62) (np -k)"
     OPTION[3]="3. $(text 30) (np -v)"
-    OPTION[4]="4. $(text 29) (np -u)"
+    OPTION[4]="4. Reconfigure/Install (np -i)"
+    OPTION[5]="5. $(text 29) (np -u)"
     OPTION[0]="0. $(text 31)"
 
     ACTION[1]() { on_off $INSTALL_STATUS; exit 0; }
     ACTION[2]() { change_api_key $INSTALL_STATUS; exit 0; }
     ACTION[3]() { upgrade_nodepass; exit 0; }
-    ACTION[4]() { uninstall; exit 0; }
+    ACTION[4]() { install; exit 0; }
+    ACTION[5]() { uninstall; exit 0; }
     ACTION[0]() { exit 0; }
   fi
 }
@@ -492,8 +505,12 @@ menu() {
   info " $VERSION_TYPE_TEXT"
   grep -qEw '0|1' <<< "$INSTALL_STATUS" && info " $(text 60) $NODEPASS_STATUS "
   
-  grep -q '.' <<< "$API_URL" && info " $(text 39) (v4): $API_URL"
-  grep -q '.' <<< "$API_URL_V6" && info " $(text 39) (v6): $API_URL_V6"
+  if grep -q ':' <<< "$URL_SERVER_IP"; then
+    grep -q '.' <<< "$API_URL" && info " $(text 39) (v6): $API_URL"
+  else
+    grep -q '.' <<< "$API_URL" && info " $(text 39) (v4): $API_URL"
+    grep -q '.' <<< "$API_URL_V6" && info " $(text 39) (v6): $API_URL_V6"
+  fi
   grep -q '.' <<< "$KEY" && info " $(text 40) $KEY"
   
   info " Version: $SCRIPT_VERSION"
@@ -520,7 +537,7 @@ main() {
   check_install; local INSTALL_STATUS=$?
 
   case "$1" in
-    -i) if [ "$INSTALL_STATUS" != 2 ]; then warning " ${E[18]} "; else install; fi ;;
+    -i) install ;;  # 彻底解除覆盖安装的限制
     -u) [ "$INSTALL_STATUS" = 2 ] && warning " ${E[59]} " || uninstall ;;
     -v) [ "$INSTALL_STATUS" = 2 ] && warning " ${E[59]} " || upgrade_nodepass ;;
     -o) [ "$INSTALL_STATUS" = 2 ] && warning " ${E[59]} " || on_off $INSTALL_STATUS ;;
