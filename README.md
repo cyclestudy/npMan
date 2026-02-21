@@ -23,12 +23,17 @@ wget -qO npman.sh https://raw.githubusercontent.com/2tof/npMan/main/npman.sh && 
 curl -sL https://raw.githubusercontent.com/2tof/npMan/main/npman.sh | sudo bash -s -- -i
 ```
 
-v1.0菜单
+- v1.0菜单
 1.Stop API (np -o)
+
 2.Change KEY (np -k)
+
 3.Upgrade core (np -v)
+
 4.Reconfigure/Install (np -i)
+
 5.Uninstall (np -u)
+
 6.Exit
 
 原nodepass项目链接：
