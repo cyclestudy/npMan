@@ -4,6 +4,12 @@
 增加了v6显示等；
 重命名成：npMan (npMananger)
 
+v1.0更新：
+- 增加的“旧配置嗅探”功能，还会自动读取你旧的端口、API 前缀和 TLS 模式，并在安装时作为默认值推荐（来自旧的 .gob 数据库文件）。
+- 增加 将api url和key写入/etc/nodepass/api.txt。
+- 解除已安装np的情况下， 不能使用-i参数；现在可以选择4. reconfigure 或-i参数 覆盖安装（不改变原来的api配置）；需要修改的话可以用-k参数。
+- 修正原来的ipv6地址在单栈机上会显示两次的bug。
+
 下载安装
 ```
 sudo bash <(curl -sL https://raw.githubusercontent.com/2tof/npMan/main/npman.sh)
