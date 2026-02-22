@@ -10,6 +10,12 @@ v1.0更新：
 - 解除已安装np的情况下， 不能使用-i参数；现在可以选择4. reconfigure/install 或-i参数 覆盖安装（不改变原来的api配置）；需要修改的话可以用-k参数。
 - 修正原来的ipv6地址在单栈机上会显示两次的bug。
 
+直接安装 （参数-i）【⚡️ 推荐 reconfigure/reinstall会覆盖旧脚本，而不该动原api url/key】
+
+```
+curl -sL https://raw.githubusercontent.com/2tof/npMan/main/npman.sh | sudo bash -s -- -i
+```
+
 下载安装
 
 ```
@@ -22,10 +28,7 @@ wget
 wget -qO npman.sh https://raw.githubusercontent.com/2tof/npMan/main/npman.sh && sudo bash npman.sh
 ```
 
-直接安装 （参数-i）
-```
-curl -sL https://raw.githubusercontent.com/2tof/npMan/main/npman.sh | sudo bash -s -- -i
-```
+
 
 ## 菜单
   
@@ -84,11 +87,6 @@ All related files and data are safely stored in a single directory:
 ---
 
 *Disclaimer: This is a community-driven management script. NodePass core project belongs to the original developers.*
-
-```
-
-```
-
 
 原nodepass项目链接：
 Nodepass Project
