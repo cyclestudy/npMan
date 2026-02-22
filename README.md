@@ -23,11 +23,8 @@ wget
 wget -qO npman.sh https://raw.githubusercontent.com/2tof/npMan/main/npman.sh && sudo bash npman.sh
 ```
 
-直接安装 （参数-i）【⚡️ 推荐 reconfigure/reinstall会覆盖旧脚本，而不该动原api url/key】
-
-```
-curl -sL https://raw.githubusercontent.com/2tof/npMan/main/npman.sh | sudo bash -s -- -i
-```
+reconfigure/reinstall会覆盖旧脚本，而不该动原api url/key
+从原版过渡，不要使用 -u 卸载。
 
 
 
