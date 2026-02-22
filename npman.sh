@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-SCRIPT_VERSION='1.0.0-v2'
+SCRIPT_VERSION='1.0.2'
 export DEBIAN_FRONTEND=noninteractive
 
 TEMP_DIR='/tmp/nodepass'
@@ -67,7 +67,7 @@ E[53]="Failed to start NodePass service, please check logs"
 E[54]="Rolled back to previous version"
 E[55]="Rollback failed, please check manually"
 E[56]="Stop API"
-E[57]="Create shortcuts successfully: script can be run with [ np ] command, and [ nodepass ] binary is directly executable."
+E[57]="Create shortcuts successfully: script can be run with [ np ] command."
 E[58]="Start API"
 E[59]="NodePass is not installed. Configuration file not found"
 E[60]="NodePass API:"
@@ -106,33 +106,36 @@ check_system() {
 }
 
 check_install() {
-  if [ ! -f "$WORK_DIR/nodepass" ]; then
-    return 2
-  else
-    if [ "$IN_CONTAINER" = 1 ] || [ "$SERVICE_MANAGE" = "none" ]; then
-      grep -q '^CMD=.*tls=0' ${WORK_DIR}/data && HTTP_S="http" || HTTP_S="https"
-    elif [ "$SERVICE_MANAGE" = "systemctl" ]; then
-      grep -q '^ExecStart=.*tls=0' /etc/systemd/system/nodepass.service && HTTP_S="http" || HTTP_S="https"
-    fi
+  if [ ! -f "$WORK_DIR/nodepass" ]; then return 2; fi
+  
+  if [ "$IN_CONTAINER" = 1 ] || [ "$SERVICE_MANAGE" = "none" ]; then
+    grep -q '^CMD=.*tls=0' ${WORK_DIR}/data && HTTP_S="http" || HTTP_S="https"
+  elif [ "$SERVICE_MANAGE" = "systemctl" ]; then
+    grep -q '^ExecStart=.*tls=0' /etc/systemd/system/nodepass.service 2>/dev/null && HTTP_S="http" || HTTP_S="https"
   fi
-  if [ "$SERVICE_MANAGE" = "systemctl" ] && ! systemctl is-active nodepass &>/dev/null; then
-    return 1
+
+  if [ "$SERVICE_MANAGE" = "systemctl" ]; then
+    if ! systemctl is-active nodepass >/dev/null 2>&1; then return 1; else return 0; fi
   else
-    if ps -ef | grep -vE "grep|<defunct>" | grep -q "nodepass"; then return 0; else return 1; fi
+    if ps -ef | grep -vE "grep|<defunct>" | grep -q "$WORK_DIR/nodepass.*master://"; then return 0; else return 1; fi
   fi
 }
 
 check_dependencies() {
   DEPS_INSTALL=()
-  for cmd in curl wget tar unzip ps; do [ ! -x "$(type -p $cmd)" ] && DEPS_INSTALL+=("$cmd"); done
+  for cmd in curl wget tar unzip ps; do [ ! -x "$(command -v $cmd 2>/dev/null)" ] && DEPS_INSTALL+=("$cmd"); done
   if [ "${#DEPS_INSTALL[@]}" -gt 0 ]; then
     info "\n $(text 7) ${DEPS_INSTALL[@]} \n"; ${PACKAGE_UPDATE} >/dev/null 2>&1; ${PACKAGE_INSTALL} ${DEPS_INSTALL[@]} >/dev/null 2>&1
+  fi
+  # Alpine 系统兼容补丁：提供 glibc 兼容层
+  if [ "$SYSTEM" = "alpine" ]; then
+    apk add --no-cache libc6-compat gcompat >/dev/null 2>&1
   fi
 }
 
 check_system_info() {
   if [ -f /.dockerenv ] || grep -q 'docker\|lxc' /proc/1/cgroup; then IN_CONTAINER=1; else IN_CONTAINER=0; fi
-  if [ -x "$(type -p systemctl)" ]; then SERVICE_MANAGE="systemctl"; else SERVICE_MANAGE="none"; fi
+  if [ -x "$(command -v systemctl 2>/dev/null)" ]; then SERVICE_MANAGE="systemctl"; else SERVICE_MANAGE="none"; fi
   if [ -f /etc/os-release ]; then source /etc/os-release; SYSTEM="${ID}"; elif [ -f /etc/arch-release ]; then SYSTEM="arch"; fi
   case "$(uname -m)" in
     x86_64 | amd64 ) ARCH=amd64 ;;
@@ -155,16 +158,23 @@ validate_ip_address() {
 check_port() {
   local PORT=$1
   if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1024 ] || [ "$PORT" -gt 65535 ]; then return 2; fi
-  if [ $(type -p ss) ]; then ss -nltup 2>/dev/null | grep -q ":$PORT " && return 1; fi
+  if command -v ss >/dev/null 2>&1; then
+    ss -nltup 2>/dev/null | grep -q ":$PORT " && return 1
+  fi
   return 0
 }
 
 get_api_url() {
   [ -s "$WORK_DIR/data" ] && source "$WORK_DIR/data"
-  if [ -s "$WORK_DIR/gob/nodepass.gob" ]; then
-    local CMD_LINE=$(sed -n 's/.*ExecStart=.*\(master.*\)"/\1/p' "/etc/systemd/system/nodepass.service" 2>/dev/null)
-    if [ -n "$CMD_LINE" ]; then
-      [[ "$CMD_LINE" =~ master://.*:([0-9]+)/([^?]+)\?(log=[^&]+&)?tls=([0-2]) ]]
+  local CMD_LINE=""
+  if [ "$SERVICE_MANAGE" = "systemctl" ] && [ -f "/etc/systemd/system/nodepass.service" ]; then
+    CMD_LINE=$(sed -n 's/.*ExecStart=.*\(master.*\)"/\1/p' "/etc/systemd/system/nodepass.service" 2>/dev/null)
+  elif [ -f "$WORK_DIR/data" ]; then
+    CMD_LINE=$(grep '^CMD=' "$WORK_DIR/data" | cut -d '"' -f 2)
+  fi
+
+  if [ -n "$CMD_LINE" ]; then
+    if [[ "$CMD_LINE" =~ master://.*:([0-9]+)/([^?]+)\?(log=[^&]+&)?tls=([0-2]) ]]; then
       PORT="${BASH_REMATCH[1]}"
       PREFIX="${BASH_REMATCH[2]}"
       TLS_MODE="${BASH_REMATCH[4]}"
@@ -172,16 +182,11 @@ get_api_url() {
     fi
     URL_SERVER_PORT=$(sed -n 's#.*:\([0-9]\+\)\/.*#\1#p' <<< "$CMD_LINE")
     
-    # 修复作用域 Bug：移除了此处的 local 关键字，让全局可读
     grep -q ':' <<< "$SERVER_IP" && URL_SERVER_IP="[$SERVER_IP]" || URL_SERVER_IP="$SERVER_IP"
     API_URL="${HTTP_S}://${URL_SERVER_IP}:${URL_SERVER_PORT}/${PREFIX:+${PREFIX%/}/}v1"
     
     LOCAL_IPV6=$(ip -6 addr show scope global | grep inet6 | awk '{print $2}' | cut -d/ -f1 | head -n 1)
-    if [ -n "$LOCAL_IPV6" ]; then
-      API_URL_V6="${HTTP_S}://[${LOCAL_IPV6}]:${URL_SERVER_PORT}/${PREFIX:+${PREFIX%/}/}v1"
-    else
-      API_URL_V6=""
-    fi
+    if [ -n "$LOCAL_IPV6" ]; then API_URL_V6="${HTTP_S}://[${LOCAL_IPV6}]:${URL_SERVER_PORT}/${PREFIX:+${PREFIX%/}/}v1"; else API_URL_V6=""; fi
 
     if grep -q 'output' <<< "$1"; then
       > "$WORK_DIR/api.txt"
@@ -211,7 +216,8 @@ get_api_key() {
       info " 💾 [Info successfully saved to: $WORK_DIR/api.txt]"
     fi
   else
-    warning " $(text 59) "
+    warning " ⚠️ API KEY data not generated yet, please check if service is running properly. "
+    [ -f "$WORK_DIR/run.log" ] && info " Log file located at: $WORK_DIR/run.log "
   fi
 }
 
@@ -236,10 +242,24 @@ get_latest_version() {
 }
 
 on_off() {
-  if systemctl is-active nodepass >/dev/null 2>&1; then stop_nodepass; info " $(text 42) "; else start_nodepass; info " $(text 43) "; fi
+  if [ "$SERVICE_MANAGE" = "systemctl" ]; then
+    if systemctl is-active nodepass >/dev/null 2>&1; then stop_nodepass; info " $(text 42) "; else start_nodepass; info " $(text 43) "; fi
+  else
+    if ps -ef | grep -vE "grep|<defunct>" | grep -q "$WORK_DIR/nodepass.*master://"; then stop_nodepass; info " $(text 42) "; else start_nodepass; info " $(text 43) "; fi
+  fi
 }
-start_nodepass() { info " $(text 51) "; systemctl start nodepass; sleep 2; }
-stop_nodepass() { info " $(text 50) "; systemctl stop nodepass; sleep 2; }
+
+start_nodepass() { 
+  info " $(text 51) "
+  if [ "$SERVICE_MANAGE" = "systemctl" ]; then systemctl start nodepass; else $WORK_DIR/start.sh; fi
+  sleep 4
+}
+
+stop_nodepass() { 
+  info " $(text 50) "
+  if [ "$SERVICE_MANAGE" = "systemctl" ]; then systemctl stop nodepass; else pkill -f "$WORK_DIR/nodepass.*master://"; fi
+  sleep 2
+}
 
 download_core() {
   info "Fetching latest NodePass release from GitHub..."
@@ -254,8 +274,9 @@ download_core() {
   mkdir -p "$TEMP_DIR/extract"
   if [[ "$FILE_NAME" == *.tar.gz ]]; then tar -xzf "$TEMP_DIR/$FILE_NAME" -C "$TEMP_DIR/extract/"; elif [[ "$FILE_NAME" == *.zip ]]; then unzip -q -o "$TEMP_DIR/$FILE_NAME" -d "$TEMP_DIR/extract/"; else cp "$TEMP_DIR/$FILE_NAME" "$TEMP_DIR/extract/nodepass"; fi
 
-  local BIN_FILE=$(find "$TEMP_DIR/extract" -type f | grep -i "nodepass" | head -n 1)
-  [ -z "$BIN_FILE" ] && BIN_FILE=$(find "$TEMP_DIR/extract" -type f | head -n 1)
+  # 修复核心抓取 Bug：精准过滤掉文本说明，只抓取二进制文件
+  local BIN_FILE=$(find "$TEMP_DIR/extract" -type f -name "nodepass" | head -n 1)
+  [ -z "$BIN_FILE" ] && BIN_FILE=$(find "$TEMP_DIR/extract" -type f -size +2M | head -n 1)
   [ -z "$BIN_FILE" ] && error "Failed to locate the binary file after extraction."
 
   mv "$BIN_FILE" "$TEMP_DIR/nodepass" && chmod +x "$TEMP_DIR/nodepass"
@@ -285,16 +306,12 @@ parse_args() {
 
 install() {
   handle_ip_input() {
-    local IP="$1"
-    unset SERVER_INPUT
+    local IP="$1"; unset SERVER_INPUT
     IP=$(sed 's/[][]//g' <<< "$IP")
-    if [[ "$IP" = "localhost" || "$IP" = "127.0.0.1" || "$IP" = "::1" ]]; then
-      SERVER_INPUT="127.0.0.1"
-    else
+    if [[ "$IP" = "localhost" || "$IP" = "127.0.0.1" || "$IP" = "::1" ]]; then SERVER_INPUT="127.0.0.1"; else
       case "$IP" in
         1|"") SERVER_INPUT="${SERVER_IPV4_DEFAULT:-$SERVER_IPV6_DEFAULT}" ;;
-        2) 
-          if [ "$IS_DUAL_STACK" = 1 ]; then SERVER_INPUT="${SERVER_IPV6_DEFAULT}"; else SERVER_INPUT="127.0.0.1"; fi ;;
+        2) if [ "$IS_DUAL_STACK" = 1 ]; then SERVER_INPUT="${SERVER_IPV6_DEFAULT}"; else SERVER_INPUT="127.0.0.1"; fi ;;
         3) SERVER_INPUT="127.0.0.1" ;;
         *) SERVER_INPUT="$IP" ;;
       esac
@@ -311,38 +328,26 @@ install() {
   SERVER_IPV4_DEFAULT=$DEFAULT_LOCAL_IP4
   SERVER_IPV6_DEFAULT=$DEFAULT_LOCAL_IP6
 
-  if [ -n "$SERVER_IPV4_DEFAULT" ] && [ -n "$SERVER_IPV6_DEFAULT" ]; then
-    IS_DUAL_STACK=1; hint "\n (2/5) $(text 78) "
-  else
-    IS_DUAL_STACK=0; hint "\n (2/5) $(text 12) "
-  fi
+  if [ -n "$SERVER_IPV4_DEFAULT" ] && [ -n "$SERVER_IPV6_DEFAULT" ]; then IS_DUAL_STACK=1; hint "\n (2/5) $(text 78) "; else IS_DUAL_STACK=0; hint "\n (2/5) $(text 12) "; fi
 
   reading "\n $(text 79) " SERVER_INPUT
   handle_ip_input "$SERVER_INPUT"
   
-  while ! validate_ip_address "$SERVER_INPUT"; do
-    hint "\n $(text 12) " && reading "\n $(text 79) " SERVER_INPUT
-    handle_ip_input "$SERVER_INPUT"
-  done
+  while ! validate_ip_address "$SERVER_INPUT"; do hint "\n $(text 12) " && reading "\n $(text 79) " SERVER_INPUT; handle_ip_input "$SERVER_INPUT"; done
 
-  local OLD_PORT="" OLD_PREFIX="" OLD_TLS=""
-  if [ -f "/etc/systemd/system/nodepass.service" ]; then
-    local OLD_CMD=$(sed -n 's/.*ExecStart=.*\(master.*\)"/\1/p' "/etc/systemd/system/nodepass.service" 2>/dev/null)
-    if [[ "$OLD_CMD" =~ master://.*:([0-9]+)/([^?]+)\?(log=[^&]+&)?tls=([0-2]) ]]; then
-      OLD_PORT="${BASH_REMATCH[1]}"
-      OLD_PREFIX="${BASH_REMATCH[2]}"
-      OLD_TLS="${BASH_REMATCH[4]}"
-    fi
+  local OLD_PORT="" OLD_PREFIX="" OLD_TLS="" OLD_CMD=""
+  if [ "$SERVICE_MANAGE" = "systemctl" ] && [ -f "/etc/systemd/system/nodepass.service" ]; then
+    OLD_CMD=$(sed -n 's/.*ExecStart=.*\(master.*\)"/\1/p' "/etc/systemd/system/nodepass.service" 2>/dev/null)
+  elif [ -f "$WORK_DIR/data" ]; then
+    OLD_CMD=$(grep '^CMD=' "$WORK_DIR/data" | cut -d '"' -f 2)
+  fi
+
+  if [[ "$OLD_CMD" =~ master://.*:([0-9]+)/([^?]+)\?(log=[^&]+&)?tls=([0-2]) ]]; then
+    OLD_PORT="${BASH_REMATCH[1]}"; OLD_PREFIX="${BASH_REMATCH[2]}"; OLD_TLS="${BASH_REMATCH[4]}"
   fi
 
   while true; do
-    if [ -n "$OLD_PORT" ]; then
-      reading "\n (3/5) $(text 13) [Current: $OLD_PORT] " PORT
-      [ -z "$PORT" ] && PORT=$OLD_PORT
-    else
-      reading "\n (3/5) $(text 13) " PORT
-    fi
-
+    if [ -n "$OLD_PORT" ]; then reading "\n (3/5) $(text 13) [Current: $OLD_PORT] " PORT; [ -z "$PORT" ] && PORT=$OLD_PORT; else reading "\n (3/5) $(text 13) " PORT; fi
     if [ -z "$PORT" ]; then PORT=$(get_random_port); info " $(text 37) $PORT"; break; else
       [ "$PORT" == "$OLD_PORT" ] && break
       check_port "$PORT" "check_used"
@@ -351,38 +356,27 @@ install() {
     fi
   done
 
-  if [[ "$SERVER_INPUT" =~ ^([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{0,4}$ ]]; then
-    CMD_SERVER_IP="$SERVER_INPUT"; SERVER_IP="$SERVER_INPUT"
-  else
+  if [[ "$SERVER_INPUT" =~ ^([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{0,4}$ ]]; then CMD_SERVER_IP="$SERVER_INPUT"; SERVER_IP="$SERVER_INPUT"; else
     if [[ "$SERVER_INPUT" == "127.0.0.1" || "$SERVER_INPUT" == "localhost" ]]; then CMD_SERVER_IP="127.0.0.1"; else CMD_SERVER_IP=""; fi
     SERVER_IP="$SERVER_INPUT"
   fi
   URL_SERVER_PORT="$PORT"
 
   while true; do
-    if [ -n "$OLD_PREFIX" ]; then
-      reading "\n (4/5) $(text 14) [Current: $OLD_PREFIX] " PREFIX
-      [ -z "$PREFIX" ] && PREFIX=$OLD_PREFIX
-    else
-      reading "\n (4/5) $(text 14) " PREFIX
-    fi
+    if [ -n "$OLD_PREFIX" ]; then reading "\n (4/5) $(text 14) [Current: $OLD_PREFIX] " PREFIX; [ -z "$PREFIX" ] && PREFIX=$OLD_PREFIX; else reading "\n (4/5) $(text 14) " PREFIX; fi
     [ -z "$PREFIX" ] && PREFIX="api" && break
     if grep -q '^[a-z0-9/]*$' <<< "$PREFIX"; then PREFIX=$(sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s#^/##;s#/$##' <<< "$PREFIX"); break; else warning " $(text 61) "; fi
   done
 
   hint "\n (5/5) $(text 15) "
   hint " $(text 16) "
-  if [ -n "$OLD_TLS" ]; then
-    reading "\n $(text 38) [Current: $OLD_TLS] " TLS_MODE
-    [ -z "$TLS_MODE" ] && TLS_MODE=$OLD_TLS
-  else
-    reading "\n $(text 38) " TLS_MODE
-  fi
+  if [ -n "$OLD_TLS" ]; then reading "\n $(text 38) [Current: $OLD_TLS] " TLS_MODE; [ -z "$TLS_MODE" ] && TLS_MODE=$OLD_TLS; else reading "\n $(text 38) " TLS_MODE; fi
   if [ -z "$TLS_MODE" ]; then TLS_MODE=1; info "Using default: Self-signed certificate"; elif [[ ! "$TLS_MODE" =~ ^[0-2]$ ]]; then warning " $(text 17) "; exit 1; fi
 
   CMD="master://${CMD_SERVER_IP}:${PORT}/${PREFIX}?tls=${TLS_MODE}${CRT_PATH:-}"
   mkdir -p $WORK_DIR
-  echo -e "LANGUAGE=E\nSERVER_IP=$SERVER_IP" > $WORK_DIR/data
+  
+  echo -e "LANGUAGE=E\nSERVER_IP=$SERVER_IP\nCMD=\"$CMD\"" > $WORK_DIR/data
 
   mv $TEMP_DIR/nodepass $WORK_DIR/np-stb
   mv $TEMP_DIR/qrencode $WORK_DIR/
@@ -390,7 +384,6 @@ install() {
   ln -sf "$WORK_DIR/np-stb" "$WORK_DIR/nodepass"
 
   create_service
-  sleep 3
   check_install
   local INSTALL_STATUS=$?
 
@@ -410,33 +403,51 @@ install() {
 }
 
 create_service() {
-  cat > /etc/systemd/system/nodepass.service << EOF
+  if [ "$SERVICE_MANAGE" = "systemctl" ]; then
+    cat > /etc/systemd/system/nodepass.service << EOF
 [Unit]
 Description=NodePass Service
 Documentation=https://github.com/NodePassProject/nodepass
 After=network.target
 [Service]
 Type=simple
+WorkingDirectory=$WORK_DIR
 ExecStart=$WORK_DIR/nodepass "$CMD"
 Restart=on-failure
 RestartSec=5s
 [Install]
 WantedBy=multi-user.target
 EOF
-  systemctl daemon-reload; systemctl enable nodepass; systemctl start nodepass
+    systemctl daemon-reload; systemctl enable nodepass >/dev/null 2>&1; systemctl start nodepass
+  else
+    # 彻底修复：使用绝对路径启动，避免 ps -ef 探针抓不到而产生误报
+    cat > $WORK_DIR/start.sh << EOF
+#!/bin/sh
+cd $WORK_DIR
+nohup $WORK_DIR/nodepass "$CMD" > $WORK_DIR/run.log 2>&1 &
+EOF
+    chmod +x $WORK_DIR/start.sh
+    $WORK_DIR/start.sh
+  fi
+  sleep 4
 }
 
 create_shortcut() {
   local CURRENT_SCRIPT="$(readlink -f "$0")"
-  cp "$CURRENT_SCRIPT" "${WORK_DIR}/np.sh"
-  chmod +x "${WORK_DIR}/np.sh"
+  if [ "$CURRENT_SCRIPT" != "${WORK_DIR}/np.sh" ] && [ -f "$CURRENT_SCRIPT" ]; then
+    cp "$CURRENT_SCRIPT" "${WORK_DIR}/np.sh"
+    chmod +x "${WORK_DIR}/np.sh"
+  fi
   ln -sf "${WORK_DIR}/np.sh" /usr/bin/np
   ln -sf "${WORK_DIR}/nodepass" /usr/bin/nodepass
   [ -s /usr/bin/np ] && info "\n $(text 57) "
 }
 
 uninstall() {
-  systemctl stop nodepass; systemctl disable nodepass; rm -f /etc/systemd/system/nodepass.service; systemctl daemon-reload
+  stop_nodepass
+  if [ "$SERVICE_MANAGE" = "systemctl" ]; then
+    systemctl disable nodepass >/dev/null 2>&1; rm -f /etc/systemd/system/nodepass.service; systemctl daemon-reload
+  fi
   rm -rf "$WORK_DIR" /usr/bin/{np,nodepass}
   info " $(text 11) "
 }
@@ -469,12 +480,7 @@ menu_setting() {
     ACTION[1]() { install; exit 0; }; ACTION[0]() { exit 0; }
   else
     get_api_key; get_api_url; get_local_version all
-
-    if [ $INSTALL_STATUS -eq 0 ]; then
-      NODEPASS_STATUS=$(text 34); OPTION[1]="1. $(text 56) (np -o)"
-    else
-      NODEPASS_STATUS=$(text 33); OPTION[1]="1. $(text 58) (np -o)"
-    fi
+    if [ $INSTALL_STATUS -eq 0 ]; then NODEPASS_STATUS=$(text 34); OPTION[1]="1. $(text 56) (np -o)"; else NODEPASS_STATUS=$(text 33); OPTION[1]="1. $(text 58) (np -o)"; fi
 
     OPTION[2]="2. $(text 62) (np -k)"
     OPTION[3]="3. $(text 30) (np -v)"
@@ -520,12 +526,7 @@ menu() {
   echo "------------------------"
 
   reading " $(text 38) " MENU_CHOICE
-
-  if grep -qE "^[0-9]+$" <<< "$MENU_CHOICE" && [ "$MENU_CHOICE" -ge 0 ] && [ "$MENU_CHOICE" -lt ${#OPTION[@]} ]; then
-    ACTION[$MENU_CHOICE]
-  else
-    warning " $(text 17) [0-$((${#OPTION[@]}-1))] " && sleep 1 && menu
-  fi
+  if grep -qE "^[0-9]+$" <<< "$MENU_CHOICE" && [ "$MENU_CHOICE" -ge 0 ] && [ "$MENU_CHOICE" -lt ${#OPTION[@]} ]; then ACTION[$MENU_CHOICE]; else warning " $(text 17) [0-$((${#OPTION[@]}-1))] " && sleep 1 && menu; fi
 }
 
 main() {
@@ -537,7 +538,7 @@ main() {
   check_install; local INSTALL_STATUS=$?
 
   case "$1" in
-    -i) install ;;  # 彻底解除覆盖安装的限制
+    -i) install ;;
     -u) [ "$INSTALL_STATUS" = 2 ] && warning " ${E[59]} " || uninstall ;;
     -v) [ "$INSTALL_STATUS" = 2 ] && warning " ${E[59]} " || upgrade_nodepass ;;
     -o) [ "$INSTALL_STATUS" = 2 ] && warning " ${E[59]} " || on_off $INSTALL_STATUS ;;
