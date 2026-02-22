@@ -10,13 +10,24 @@ v1.0更新：
 - 解除已安装np的情况下， 不能使用-i参数；现在可以选择4. reconfigure/install 或-i参数 覆盖安装（不改变原来的api配置）；需要修改的话可以用-k参数。
 - 修正原来的ipv6地址在单栈机上会显示两次的bug。
 
+下载安装
+
+```
+sudo bash <(curl -sL https://raw.githubusercontent.com/2tof/npMan/main/npman.sh)
+```
+
+wget
+
+```
+wget -qO npman.sh https://raw.githubusercontent.com/2tof/npMan/main/npman.sh && sudo bash npman.sh
+```
 
 直接安装 （参数-i）
 ```
 curl -sL https://raw.githubusercontent.com/2tof/npMan/main/npman.sh | sudo bash -s -- -i
 ```
 
-- v1.0菜单
+## 菜单
   
 1.Stop API (np -o)
 
@@ -42,27 +53,6 @@ NodePass 一键安装与管理脚本
 - **Dual-Stack Network Ready / 单双栈智能侦测**: Perfectly handles pure IPv4, pure IPv6, and Dual-Stack VPS. 完美识别纯 IPv6 机器，自动调整绑定策略。
 - **Interactive Global Menu / 全局交互菜单**: Manage everything simply by typing `np` from anywhere in your terminal. 随时随地输入 `np` 呼出管理面板。
 - **Auto Dependency Management / 自动环境修复**: Automatically resolves missing packages (curl, wget, tar, ps) and runtime libraries (glibc compat for Alpine).
-
-## 🚀 Quick Start / 快速开始
-
-Log in to your server as `root` and run one of the following commands:
-请使用 `root` 用户登录服务器，并执行以下任意一条命令：
-
-**Use `curl` (Recommended / 推荐):**
-```bash
-sudo bash <(curl -sL [https://raw.githubusercontent.com/2tof/npMan/main/npman.sh](https://raw.githubusercontent.com/2tof/npMan/main/npman.sh))
-
-```
-
-**Use `wget`:**
-
-```bash
-wget -qO npman.sh [https://raw.githubusercontent.com/2tof/npMan/main/npman.sh](https://raw.githubusercontent.com/2tof/npMan/main/npman.sh) && sudo bash npman.sh
-
-```
-
-*(Note: The script will prompt an interactive menu. Select `Install` to begin.)*
-*(注意：脚本运行后将弹出交互式菜单，选择 `Install` 即可开始安装。)*
 
 ## 🧰 Usage / 常用命令 (CLI)
 
