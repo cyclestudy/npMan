@@ -5,6 +5,7 @@ export DEBIAN_FRONTEND=noninteractive
 
 TEMP_DIR='/tmp/nodepass'
 WORK_DIR='/etc/nodepass'
+GH_PROXY=''
 
 trap "rm -rf $TEMP_DIR >/dev/null 2>&1 ; echo -e '\n' ;exit" INT QUIT TERM EXIT
 mkdir -p $TEMP_DIR
@@ -133,6 +134,16 @@ check_dependencies() {
   fi
 }
 
+check_china() {
+  # 如果已通过环境变量设置代理，直接使用
+  if [ -n "$GH_PROXY" ]; then return; fi
+  # 测试 GitHub 连通性，超时 3 秒；不通则启用代理
+  if ! curl -sL -o /dev/null -w '' --connect-timeout 3 --max-time 5 https://github.com >/dev/null 2>&1; then
+    GH_PROXY='https://hk.gh-proxy.org/'
+    info " Detected GitHub connectivity issue, using proxy: ${GH_PROXY}"
+  fi
+}
+
 check_system_info() {
   if [ -f /.dockerenv ] || grep -q 'docker\|lxc' /proc/1/cgroup; then IN_CONTAINER=1; else IN_CONTAINER=0; fi
   if [ -x "$(command -v systemctl 2>/dev/null)" ]; then SERVICE_MANAGE="systemctl"; else SERVICE_MANAGE="none"; fi
@@ -237,7 +248,7 @@ get_local_version() {
 }
 
 get_latest_version() {
-  STABLE_LATEST_VERSION=$(curl -s https://api.github.com/repos/NodePassProject/nodepass/releases/latest | grep '"tag_name":' | cut -d '"' -f 4)
+  STABLE_LATEST_VERSION=$(curl -s "${GH_PROXY}https://api.github.com/repos/NodePassProject/nodepass/releases/latest" | grep '"tag_name":' | cut -d '"' -f 4)
   [ -z "$STABLE_LATEST_VERSION" ] && STABLE_LATEST_VERSION="Unknown"
 }
 
@@ -263,13 +274,17 @@ stop_nodepass() {
 
 download_core() {
   info "Fetching latest NodePass release from GitHub..."
-  local API_RESP=$(curl -s https://api.github.com/repos/NodePassProject/nodepass/releases/latest)
+  local API_RESP=$(curl -s "${GH_PROXY}https://api.github.com/repos/NodePassProject/nodepass/releases/latest")
   local DOWNLOAD_URL=$(echo "$API_RESP" | grep '"browser_download_url":' | grep -i "linux" | grep -i "$ARCH" | grep -v -i "sha256" | grep -v -i "md5" | cut -d '"' -f 4 | head -n 1)
   [ -z "$DOWNLOAD_URL" ] && error "Could not find a valid download URL for architecture: linux-$ARCH on Github."
 
-  info "Downloading from: $DOWNLOAD_URL"
+  # 如果启用了代理，给下载 URL 也加上代理前缀
+  local ACTUAL_URL="$DOWNLOAD_URL"
+  if [ -n "$GH_PROXY" ]; then ACTUAL_URL="${GH_PROXY}${DOWNLOAD_URL}"; fi
+
+  info "Downloading from: $ACTUAL_URL"
   local FILE_NAME=$(basename "$DOWNLOAD_URL")
-  wget -qO "$TEMP_DIR/$FILE_NAME" "$DOWNLOAD_URL" || error "Download failed!"
+  wget -qO "$TEMP_DIR/$FILE_NAME" "$ACTUAL_URL" || error "Download failed!"
 
   mkdir -p "$TEMP_DIR/extract"
   if [[ "$FILE_NAME" == *.tar.gz ]]; then tar -xzf "$TEMP_DIR/$FILE_NAME" -C "$TEMP_DIR/extract/"; elif [[ "$FILE_NAME" == *.zip ]]; then unzip -q -o "$TEMP_DIR/$FILE_NAME" -d "$TEMP_DIR/extract/"; else cp "$TEMP_DIR/$FILE_NAME" "$TEMP_DIR/extract/nodepass"; fi
@@ -534,7 +549,7 @@ main() {
   OPTION="${1,,}"
   [ "${1,,}" = "-h" ] && help && exit 0
 
-  check_root; check_system; check_dependencies
+  check_root; check_system; check_dependencies; check_china
   check_install; local INSTALL_STATUS=$?
 
   case "$1" in
