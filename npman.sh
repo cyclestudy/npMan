@@ -137,10 +137,12 @@ check_dependencies() {
 check_china() {
   # 如果已通过环境变量设置代理，直接使用
   if [ -n "$GH_PROXY" ]; then return; fi
-  # 测试 GitHub 连通性，超时 3 秒；不通则启用代理
-  if ! curl -sL -o /dev/null -w '' --connect-timeout 3 --max-time 5 https://github.com >/dev/null 2>&1; then
+  # 通过 IP 归属地判断是否为中国大陆，是则启用 GitHub 代理
+  local COUNTRY=$(curl -s --connect-timeout 3 --max-time 5 https://ipapi.co/country_code/ 2>/dev/null)
+  [ -z "$COUNTRY" ] && COUNTRY=$(curl -s --connect-timeout 3 --max-time 5 https://ifconfig.co/country-iso 2>/dev/null)
+  if [ "$COUNTRY" = "CN" ]; then
     GH_PROXY='https://hk.gh-proxy.org/'
-    info " Detected GitHub connectivity issue, using proxy: ${GH_PROXY}"
+    info " Detected China mainland IP, using GitHub proxy: ${GH_PROXY}"
   fi
 }
 
