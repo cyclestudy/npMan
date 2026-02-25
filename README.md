@@ -26,11 +26,21 @@ wget
 wget -qO npman.sh https://raw.githubusercontent.com/cyclestudy/npMan/main/npman.sh && sudo bash npman.sh
 ```
 
-**中国大陆用户**：脚本会自动检测 GitHub 连通性，如果无法直连会自动启用代理。也可以手动强制使用代理：
+### 中国大陆用户
+
+下载脚本和脚本内的 GitHub 请求均需走代理：
+
+curl
 ```bash
-# 手动指定代理
-GH_PROXY=https://hk.gh-proxy.org/ sudo bash <(curl -sL https://raw.githubusercontent.com/cyclestudy/npMan/main/npman.sh)
+sudo bash <(curl -sL https://hk.gh-proxy.org/https://raw.githubusercontent.com/cyclestudy/npMan/main/npman.sh)
 ```
+
+wget
+```bash
+wget -qO npman.sh https://hk.gh-proxy.org/https://raw.githubusercontent.com/cyclestudy/npMan/main/npman.sh && sudo bash npman.sh
+```
+
+> 脚本启动后会自动检测 GitHub 连通性，无法直连时自动通过代理下载 NodePass 核心。
 
 reconfigure/reinstall会覆盖旧脚本，而不改动原api url/key。
 从原版过渡，不要使用 -u 卸载。
