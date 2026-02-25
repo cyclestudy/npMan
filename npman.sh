@@ -250,7 +250,7 @@ get_local_version() {
 }
 
 get_latest_version() {
-  STABLE_LATEST_VERSION=$(curl -s "${GH_PROXY}https://api.github.com/repos/NodePassProject/nodepass/releases/latest" | grep '"tag_name":' | cut -d '"' -f 4)
+  STABLE_LATEST_VERSION=$(curl -s https://api.github.com/repos/NodePassProject/nodepass/releases/latest | grep '"tag_name":' | cut -d '"' -f 4)
   [ -z "$STABLE_LATEST_VERSION" ] && STABLE_LATEST_VERSION="Unknown"
 }
 
@@ -276,7 +276,7 @@ stop_nodepass() {
 
 download_core() {
   info "Fetching latest NodePass release from GitHub..."
-  local API_RESP=$(curl -s "${GH_PROXY}https://api.github.com/repos/NodePassProject/nodepass/releases/latest")
+  local API_RESP=$(curl -s https://api.github.com/repos/NodePassProject/nodepass/releases/latest)
   local DOWNLOAD_URL=$(echo "$API_RESP" | grep '"browser_download_url":' | grep -i "linux" | grep -i "$ARCH" | grep -v -i "sha256" | grep -v -i "md5" | cut -d '"' -f 4 | head -n 1)
   [ -z "$DOWNLOAD_URL" ] && error "Could not find a valid download URL for architecture: linux-$ARCH on Github."
 
