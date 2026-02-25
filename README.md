@@ -5,25 +5,34 @@
 重命名成：npMan (npMananger)
 
 更新：
-- 增加的“旧配置嗅探”功能，还会自动读取你旧的端口、API 前缀和 TLS 模式，并在安装时作为默认值推荐（来自旧的 .gob 数据库文件）。
+- 增加的”旧配置嗅探”功能，还会自动读取你旧的端口、API 前缀和 TLS 模式，并在安装时作为默认值推荐（来自旧的 .gob 数据库文件）。
 - 增加 将api url和key写入/etc/nodepass/api.txt。
 - 解除已安装np的情况下， 不能使用-i参数；现在可以选择4. reconfigure/install 或-i参数 覆盖安装（不改变原来的api配置）；需要修改的话可以用-k参数。
 - 修正原来的ipv6地址在单栈机上会显示两次的bug。
+- **中国大陆 GitHub 代理支持**：自动检测 GitHub 连通性，无法直连时自动通过 `hk.gh-proxy.org` 代理下载，也可通过环境变量手动指定。
 
 
-下载安装--会显示原配置的API、运行状态
+## 🚀 下载安装
+
+会显示原配置的API、运行状态。
+
 curl
-```
-sudo bash <(curl -sL https://raw.githubusercontent.com/2tof/npMan/main/npman.sh)
+```bash
+sudo bash <(curl -sL https://raw.githubusercontent.com/cyclestudy/npMan/main/npman.sh)
 ```
 
 wget
-
+```bash
+wget -qO npman.sh https://raw.githubusercontent.com/cyclestudy/npMan/main/npman.sh && sudo bash npman.sh
 ```
-wget -qO npman.sh https://raw.githubusercontent.com/2tof/npMan/main/npman.sh && sudo bash npman.sh
+
+**中国大陆用户**：脚本会自动检测 GitHub 连通性，如果无法直连会自动启用代理。也可以手动强制使用代理：
+```bash
+# 手动指定代理
+GH_PROXY=https://hk.gh-proxy.org/ sudo bash <(curl -sL https://raw.githubusercontent.com/cyclestudy/npMan/main/npman.sh)
 ```
 
-reconfigure/reinstall会覆盖旧脚本，而不该动原api url/key
+reconfigure/reinstall会覆盖旧脚本，而不改动原api url/key。
 从原版过渡，不要使用 -u 卸载。
 
 
